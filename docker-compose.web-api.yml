@@ -1,0 +1,51 @@
+name: email-delivery-manager
+
+services:
+  traefik:
+    image: traefik:v3.2
+    command:
+      - "--api.dashboard=true"
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+    ports:
+      - "80:80"
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - app
+
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    environment:
+      API_ENVIRONMENT: docker
+      API_DATABASE_URL: postgresql://app:app@postgres:5432/app
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.api.rule=Host(`api.localhost`)"
+      - "traefik.http.routers.api.entrypoints=web"
+      - "traefik.http.services.api.loadbalancer.server.port=8000"
+    networks:
+      - app
+
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    environment:
+      NEXT_PUBLIC_API_URL: http://api.localhost
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.web.rule=Host(`web.localhost`)"
+      - "traefik.http.routers.web.entrypoints=web"
+      - "traefik.http.services.web.loadbalancer.server.port=3000"
+    networks:
+      - app
+
+networks:
+  app:
+    name: email-delivery-manager-network

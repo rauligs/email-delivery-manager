@@ -1,0 +1,16 @@
+.git
+.ralph.env
+AI-WORKFLOW.md
+CLAUDE.md
+GEMINI.md
+ralph.sh
+
+**/.venv
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+
+**/node_modules
+**/.next
+**/playwright-report
+**/test-results

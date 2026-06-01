@@ -1,0 +1,40 @@
+[project]
+name = "email-delivery-manager-background"
+version = "0.1.0"
+description = "Background workers, scraping, and notification jobs"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "httpx>=0.27.0",
+  "pydantic-settings>=2.6.0",
+  "email-delivery-manager-shared",
+]
+
+[project.scripts]
+background-worker = "background.cli:main"
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3.0",
+  "ruff>=0.8.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/background"]
+
+[tool.uv.sources]
+"email-delivery-manager-shared" = { path = "../shared", editable = true }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]

@@ -1,0 +1,28 @@
+name: email-delivery-manager
+
+services:
+  worker:
+    build:
+      context: .
+      dockerfile: background/Dockerfile
+    command: ["uv", "run", "background-worker", "worker"]
+    environment:
+      BACKGROUND_ENVIRONMENT: docker
+      BACKGROUND_DATABASE_URL: postgresql://app:app@postgres:5432/app
+    networks:
+      - app
+
+  scraper:
+    build:
+      context: .
+      dockerfile: background/Dockerfile
+    command: ["uv", "run", "background-worker", "scraper"]
+    environment:
+      BACKGROUND_ENVIRONMENT: docker
+      BACKGROUND_DATABASE_URL: postgresql://app:app@postgres:5432/app
+    networks:
+      - app
+
+networks:
+  app:
+    name: email-delivery-manager-network
