@@ -26,6 +26,13 @@ Full glossary: [CONTEXT.md](./CONTEXT.md).
 
 Follow these steps in order. All commands run from the repo root.
 
+> **Operator prerequisites.** The CLIs (`deploy`, `tenant-setup`, `smoke-test`) authenticate
+> via the standard boto3 credential chain, so log in first with
+> **`aws sso login --profile <your-profile>`** and pass `--profile`/`AWS_PROFILE` (no static
+> keys). Default region is `eu-central-1`; select the deployment with `--env <prod|staging>`.
+> Every AWS resource created is tagged `app=notification-engine`, `environment=<env>`,
+> `managed-by=email-delivery-manager` for provenance and cost tracking.
+
 ### 1. Register the Tenant
 
 Add an entry to the registry at `notifications/src/notifications/tenants.py` — the single

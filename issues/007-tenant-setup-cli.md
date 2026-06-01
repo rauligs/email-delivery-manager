@@ -8,8 +8,10 @@ Turns the "verify the domain first" prerequisite into a guided, semi-automated s
 ## Acceptance criteria
 
 - A console script (`uv run tenant-setup <tenant>`) that:
+  - resolves config/auth via `config.py` and `--profile`/`AWS_PROFILE` (boto3 default chain;
+    `aws sso login` is the operator prerequisite, no static keys);
   - reads the registry and, for each of the Tenant's `from_domains`, creates/looks-up the SES
-    domain identity and retrieves its DKIM tokens;
+    domain identity (tagged with the standard tag set) and retrieves its DKIM tokens;
   - prints **Cloudflare-ready** DNS records: 3 DKIM `CNAME`s plus recommended SPF and DMARC
     `TXT` records (and a MAIL FROM suggestion);
   - polls SES verification status and reports progress;

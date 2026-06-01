@@ -21,6 +21,13 @@ module, routed to the `python` skill. No AWS calls in this issue.
   `.gemini/skills/python/SKILL.md` respectively).
 - Root `README.md` Structure section lists `notifications/` and points to
   `TENANT-ONBOARDING.md`.
+- A typed settings module `src/notifications/config.py` (pydantic-settings) is the single
+  reader of environment variables, with documented defaults: `ENVIRONMENT` (required at
+  runtime), `AWS_REGION` (default `eu-central-1`), `AWS_PROFILE` (optional, for SSO), and
+  `DELIVERY_DLQ_URL` (injected by the stack at runtime). Optional `.env` support for local CLI
+  use only (non-secret values; `.env` is gitignored).
+- A shared "standard tags" helper returns the tag set applied to every AWS resource:
+  `app=notification-engine`, `environment=<env>`, `managed-by=email-delivery-manager`.
 
 ## Dependencies
 

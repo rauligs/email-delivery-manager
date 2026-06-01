@@ -133,6 +133,15 @@ pytest, ruff); `scripts/verify.sh` runs the `notifications` project; `CLAUDE.md`
 - **SES:** stack creates **configuration sets only**; domain identities + sandbox exit are
   manual prerequisites, guided by `tenant-setup`.
 - **Region:** `eu-central-1` default.
+- **Config:** a single typed settings module (`config.py`, pydantic-settings) is the only
+  reader of env vars. Runtime values are injected onto the Lambda by the stack (`ENVIRONMENT`,
+  `DELIVERY_DLQ_URL`); CLIs read shell env + flags (`--env`, `--region`, `--profile`). No
+  secrets in the repo; optional gitignored `.env` for local CLI use.
+- **AWS auth:** the Lambda uses its IAM execution role; operator CLIs use the boto3 default
+  credential chain via **AWS SSO** (`aws sso login --profile <profile>`). No static keys.
+- **Tagging:** every AWS resource carries `app=notification-engine`, `environment=<env>`,
+  `managed-by=email-delivery-manager` — defined once in `config.py`, applied per-resource and
+  as stack-level deploy tags.
 - **Operator tools** (`deploy`, `tenant-setup`, `smoke-test`) hit real AWS, run by hand,
   **outside** the Ralph/`verify.sh` loop; unit-tested with mocked boto3.
 

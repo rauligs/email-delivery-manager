@@ -19,6 +19,9 @@ whole pipeline is exercised before any feature is fleshed out.
 - A minimal Troposphere stack at `src/notifications/infra/stack.py` synthesizes a delivery
   SQS queue, the Lambda function, and an IAM execution role; an **offline** test asserts those
   resources appear in the synthesized CloudFormation (synthesis only, never a deploy).
+- Every resource the stack creates carries the standard tag set (`app`, `environment`,
+  `managed-by`) from `config.py`, and the Lambda's `Environment.Variables` include
+  `ENVIRONMENT`; the offline synth test asserts both.
 - Unit tests assert the rendered HTML (including loop output) and the SES call arguments.
 - `./scripts/verify.sh` passes.
 

@@ -42,3 +42,6 @@ default region is `eu-central-1` (Frankfurt).
   one-time-code or invoice email.
 - `verify.sh` gains a `notifications` project entry and `CLAUDE.md` gains a
   `notifications/ → python skill` routing line.
+- Config is read by one settings module; runtime env vars are injected onto the Lambda by the
+  stack, operator CLIs authenticate via AWS SSO (no static keys), and every resource is tagged
+  `app` / `environment` / `managed-by` for provenance.

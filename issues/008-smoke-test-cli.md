@@ -8,6 +8,8 @@ tests. Proves a *deployed* Environment actually works.
 ## Acceptance criteria
 
 - A console script (`uv run smoke-test <tenant> <template>`) that:
+  - resolves config/auth via `config.py` and `--env`/`--region`/`--profile` (boto3 default
+    chain; `aws sso login` is the operator prerequisite);
   - enqueues a real Delivery request to the deployed queue by default (`--mode sqs`), with
     `--mode lambda|ses` as narrower diagnostics;
   - sends FROM a real Tenant identity, TO `success@simulator.amazonses.com` by default; `--to`
