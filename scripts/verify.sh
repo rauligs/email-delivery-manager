@@ -18,6 +18,7 @@ run_python_project() {
 run_python_project shared
 run_python_project api
 run_python_project background
+run_python_project notifications
 
 echo
 echo "==> web"

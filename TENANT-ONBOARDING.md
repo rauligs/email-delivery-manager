@@ -10,13 +10,13 @@ email through it.
 
 ## Concepts (quick)
 
-| Term | Meaning |
-|------|---------|
-| **Tenant** | One of your sending products. Owns its templates, an SES configuration set, a default sender, and its permitted sending domains. Identified by a stable slug (`acme`). |
-| **Environment** | A whole deployment of the engine (`prod`, `staging`). The same Tenants exist in each. Not part of a Tenant's id. |
-| **Delivery request** | The JSON message you enqueue to ask for one email to be rendered and sent. |
-| **Template** | A named Jinja2 HTML file owned by a Tenant. |
-| **Sender identity** | The `from_address` an email is sent as — must belong to the Tenant's permitted domains. |
+| Term                 | Meaning                                                                                                                                                                |
+|----------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Tenant**           | One of your sending products. Owns its templates, an SES configuration set, a default sender, and its permitted sending domains. Identified by a stable slug (`acme`). |
+| **Environment**      | A whole deployment of the engine (`prod`, `staging`). The same Tenants exist in each. Not part of a Tenant's id.                                                       |
+| **Delivery request** | The JSON message you enqueue to ask for one email to be rendered and sent.                                                                                             |
+| **Template**         | A named Jinja2 HTML file owned by a Tenant.                                                                                                                            |
+| **Sender identity**  | The `from_address` an email is sent as — must belong to the Tenant's permitted domains.                                                                                |
 
 Full glossary: [CONTEXT.md](./CONTEXT.md).
 
@@ -83,12 +83,15 @@ only send to verified recipients and the mailbox simulator.
 ### 4. Deploy the Environment
 
 ```sh
-uv run deploy            # aws cloudformation deploy of the synthesized template
+uv run deploy --env prod --artifact-bucket <your-artifact-bucket>
 ```
 
 This creates the Tenant's configuration set in the target Environment (and packages the
-Lambda with the new templates). Set the target with `ENVIRONMENT=prod` (default region is
-`eu-central-1`, Frankfurt).
+Lambda with the new templates). The `--artifact-bucket` (or `DEPLOY_ARTIFACT_BUCKET`) is a
+required one-time prerequisite; default region is `eu-central-1` (Frankfurt).
+
+> Full infra deployment steps — bootstrapping the artifact bucket, config flags, redeploy
+> triggers, and teardown — are in [DEPLOYMENT.md](./DEPLOYMENT.md).
 
 ### 5. Smoke-test the deployed pipeline
 
@@ -128,24 +131,38 @@ The queue URL is a CloudFormation **stack output** of the deployed Environment
 
 ```json
 {
-  "tenant": "acme",                     // required — your Tenant slug
-  "template_name": "welcome",           // required — a template file under templates/acme/
-  "to": "user@example.com",             // required — single recipient
-  "subject": "Welcome to Acme",         // required
-  "from_name": "Acme",                  // optional — display name
-  "from_address": "hello@acme.com",     // optional — must be within the Tenant's from_domains;
-                                        //            omitted → the Tenant's default_from is used
-  "template_data": {                    // optional — values passed to the Jinja2 template
+  "tenant": "acme",
+  // required — your Tenant slug
+  "template_name": "welcome",
+  // required — a template file under templates/acme/
+  "to": "user@example.com",
+  // required — single recipient
+  "subject": "Welcome to Acme",
+  // required
+  "from_name": "Acme",
+  // optional — display name
+  "from_address": "hello@acme.com",
+  // optional — must be within the Tenant's from_domains;
+  //            omitted → the Tenant's default_from is used
+  "template_data": {
+    // optional — values passed to the Jinja2 template
     "first_name": "Sam",
     "items": [
-      { "name": "Report A", "value": 42 },
-      { "name": "Report B", "value": 17 }
+      {
+        "name": "Report A",
+        "value": 42
+      },
+      {
+        "name": "Report B",
+        "value": 17
+      }
     ]
   }
 }
 ```
 
 Rules:
+
 - Unknown `tenant`, missing `template_name` file, schema-invalid payload, or a `from_address`
   outside the Tenant's domains are **non-retriable** — logged and routed to the DLQ, not retried.
 - Transient SES errors (throttling/5xx) are retried automatically.
@@ -202,12 +219,20 @@ driven by `template_data.items`:
 ```html
 <h1>Weekly report for {{ first_name }}</h1>
 <table>
-  <thead><tr><th>Name</th><th>Value</th></tr></thead>
-  <tbody>
+    <thead>
+    <tr>
+        <th>Name</th>
+        <th>Value</th>
+    </tr>
+    </thead>
+    <tbody>
     {% for item in items %}
-    <tr><td>{{ item.name }}</td><td>{{ item.value }}</td></tr>
+    <tr>
+        <td>{{ item.name }}</td>
+        <td>{{ item.value }}</td>
+    </tr>
     {% endfor %}
-  </tbody>
+    </tbody>
 </table>
 {% if not items %}<p>No activity this week.</p>{% endif %}
 ```

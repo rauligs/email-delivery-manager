@@ -7,6 +7,15 @@ __pycache__/
 .venv/
 .pytest_cache/
 .ruff_cache/
-
+pytest-of-*/
+# Node / frontend dependencies and build artifacts
+node_modules/
+.next/
+out/
+.turbo/
+playwright-report/
+test-results/
+.playwright/
+uv-*.lock
 # Local env (non-secret operator config only; never commit secrets)
 .env

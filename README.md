@@ -9,6 +9,9 @@ application boundaries and shared Python domain code.
 - `background/` - worker and scraper processes
   - `background/src/background/worker/` - durable worker example
   - `background/src/background/scraper/` - scraper example
+- `notifications/` - serverless notification engine (render, send, deploy);
+  see [`DEPLOYMENT.md`](DEPLOYMENT.md) for infra deployment and
+  [`TENANT-ONBOARDING.md`](TENANT-ONBOARDING.md) for tenant setup
 - `shared/` - Python resources shared by API and background, such as models
 - `web/` - Next.js 16.2.6 frontend
 - `e2e/` - Playwright tests for the full local ecosystem

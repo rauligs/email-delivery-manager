@@ -14,6 +14,7 @@ Use the same folder standards for review:
 
 - `api/`: enforce `.gemini/skills/api/SKILL.md`.
 - `background/`: enforce `.gemini/skills/python/SKILL.md`.
+- `notifications/`: enforce `.gemini/skills/python/SKILL.md`.
 - `web/`: enforce `.gemini/skills/frontend/SKILL.md`.
 - Cross-folder changes must satisfy every relevant skill, with the stricter rule
   winning when standards overlap.

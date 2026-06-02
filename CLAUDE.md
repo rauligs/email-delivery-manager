@@ -12,6 +12,8 @@ Before changing files, choose the skill by the top-level project folder:
   security, operations, and API tests.
 - `background/`: use `.claude/skills/python/SKILL.md` for Python workers, scripts,
   scraping, durable jobs, checkpoints, and Python tests.
+- `notifications/`: use `.claude/skills/python/SKILL.md` for the serverless
+  notification engine (render, send, deploy), settings, and Python tests.
 - `web/`: use `.claude/skills/frontend/SKILL.md` for React, Next.js, TypeScript,
   Tailwind, accessibility, performance, frontend security, and UI tests.
 - Cross-folder work: load every relevant skill and resolve conflicts in favor
