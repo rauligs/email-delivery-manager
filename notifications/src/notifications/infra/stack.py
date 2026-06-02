@@ -46,6 +46,17 @@ DEFAULT_BATCH_SIZE = 10
 DEFAULT_BATCHING_WINDOW_SECONDS = 5
 DEFAULT_MAXIMUM_CONCURRENCY = 2
 
+# The function renders and calls SES for up to a whole batch per invoke, so the
+# AWS default 3s timeout is too tight for a cold start plus SES round-trips. 30s
+# gives headroom while still bounding a stuck send.
+LAMBDA_TIMEOUT_SECONDS = 30
+# More memory buys proportionally more CPU, which shortens cold-start TLS to SES.
+LAMBDA_MEMORY_SIZE_MB = 256
+# SQS requires the source queue's visibility timeout to be at least the function
+# timeout; AWS recommends ~6x so an in-flight batch is never redelivered as a
+# duplicate while the function is still working on it.
+DELIVERY_QUEUE_VISIBILITY_TIMEOUT_SECONDS = LAMBDA_TIMEOUT_SECONDS * 6
+
 
 def _configuration_set_logical_id(tenant: Tenant) -> str:
     """A CloudFormation-safe logical id for a tenant's configuration set."""
@@ -102,6 +113,7 @@ def build_template(
     delivery_queue = Queue(
         "DeliveryQueue",
         QueueName=f"notification-engine-delivery-{environment}",
+        VisibilityTimeout=DELIVERY_QUEUE_VISIBILITY_TIMEOUT_SECONDS,
         RedrivePolicy=RedrivePolicy(
             deadLetterTargetArn=GetAtt(dead_letter_queue, "Arn"),
             maxReceiveCount=MAX_RECEIVE_COUNT,
@@ -176,6 +188,8 @@ def build_template(
         Handler=LAMBDA_HANDLER,
         Role=GetAtt(execution_role, "Arn"),
         Code=Code(S3Bucket=Ref(code_bucket), S3Key=Ref(code_key)),
+        Timeout=LAMBDA_TIMEOUT_SECONDS,
+        MemorySize=LAMBDA_MEMORY_SIZE_MB,
         Environment=Environment(
             Variables={
                 "ENVIRONMENT": environment,

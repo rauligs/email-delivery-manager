@@ -45,7 +45,18 @@ class SesEmailSender:
 def build_default_sender(settings: Settings | None = None) -> SesEmailSender:
     """Construct an ``SesEmailSender`` backed by a real region-bound SES client."""
     import boto3
+    from botocore.config import Config
 
     settings = settings or get_settings()
-    client = boto3.client("ses", region_name=settings.aws_region)
+    # Bound the SES call so a slow or unreachable endpoint fails fast (and is
+    # logged) instead of silently consuming the whole Lambda timeout.
+    client = boto3.client(
+        "ses",
+        region_name=settings.aws_region,
+        config=Config(
+            connect_timeout=5,
+            read_timeout=10,
+            retries={"max_attempts": 2, "mode": "standard"},
+        ),
+    )
     return SesEmailSender(client)

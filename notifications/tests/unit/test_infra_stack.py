@@ -102,6 +102,25 @@ def test_delivery_queue_redrives_to_the_dlq_after_three_receives() -> None:
     assert redrive["deadLetterTargetArn"] == {"Fn::GetAtt": ["DeliveryDeadLetterQueue", "Arn"]}
 
 
+def test_function_sets_a_timeout_and_memory_above_the_aws_defaults() -> None:
+    properties = _synthesize("staging")["Resources"]["DeliveryFunction"]["Properties"]
+
+    # The AWS defaults (3s / 128MB) are too tight for a cold start plus an SES
+    # round-trip — the function timed out before sending until these were set.
+    assert properties["Timeout"] >= 15
+    assert properties["MemorySize"] >= 256
+
+
+def test_delivery_queue_visibility_timeout_covers_the_function_timeout() -> None:
+    resources = _synthesize("staging")["Resources"]
+    visibility = resources["DeliveryQueue"]["Properties"]["VisibilityTimeout"]
+    timeout = resources["DeliveryFunction"]["Properties"]["Timeout"]
+
+    # SQS requires visibility >= function timeout; keep headroom (AWS recommends
+    # ~6x) so an in-flight batch is never redelivered as a duplicate mid-processing.
+    assert visibility >= timeout * 6
+
+
 def test_event_source_mapping_reports_batch_item_failures_with_conservative_scaling() -> None:
     resources = _synthesize("staging")["Resources"]
     esm = _only(resources, "AWS::Lambda::EventSourceMapping")["Properties"]
