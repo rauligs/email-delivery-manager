@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="es">
+  <body>
+    <h1>Resumen semanal de {{ name }}</h1>
+    <table>
+      <thead>
+        <tr>
+          <th>Métrica</th>
+          <th>Valor</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td>{{ row.label }}</td>
+          <td>{{ row.value }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </body>
+</html>

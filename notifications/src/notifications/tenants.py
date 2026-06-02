@@ -42,10 +42,16 @@ class SenderNotPermitted(Exception):
 # The single source of truth. New tenants are onboarded by adding an entry here;
 # the stack provisions their configuration set and the handler resolves them.
 TENANTS: dict[str, Tenant] = {
+    # Offline demo/test tenant — its domain is intentionally unroutable.
     "acme": Tenant(
         slug="acme",
         default_from="noreply@acme.example",
         from_domains=("acme.example",),
+    ),
+    "subastae": Tenant(
+        slug="subastae",
+        default_from="hola@subastae.com",
+        from_domains=("subastae.com",),
     ),
 }
 
