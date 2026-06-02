@@ -53,16 +53,16 @@ bucket. Create one per account (reused across environments), e.g.:
 
 ```sh
 aws s3api create-bucket \
-  --bucket my-notification-engine-artifacts \
+  --bucket global-notification-engine-artifacts \
   --region eu-central-1 \
   --create-bucket-configuration LocationConstraint=eu-central-1 \
   --profile <your-profile>
 
 # Recommended: block public access + enable versioning
-aws s3api put-public-access-block --bucket my-notification-engine-artifacts \
+aws s3api put-public-access-block --bucket global-notification-engine-artifacts \
   --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true \
   --profile <your-profile>
-aws s3api put-bucket-versioning --bucket my-notification-engine-artifacts \
+aws s3api put-bucket-versioning --bucket global-notification-engine-artifacts \
   --versioning-configuration Status=Enabled --profile <your-profile>
 ```
 
@@ -84,14 +84,13 @@ runtime secrets are injected by the stack, not the repo.
 
 ## Deploy
 
-From the repo root (or `notifications/`):
+From `notifications/`:
 
 ```sh
 uv run deploy \
   --env prod \
   --region eu-central-1 \
-  --profile <your-profile> \
-  --artifact-bucket my-notification-engine-artifacts
+  --artifact-bucket global-notification-engine-artifacts
 ```
 
 The CLI runs this pipeline, surfacing friendly one-line errors (never a traceback) and a
