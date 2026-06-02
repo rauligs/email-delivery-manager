@@ -48,8 +48,17 @@ STACK_NAME_PREFIX = "notification-engine"
 LAMBDA_CAPABILITY = "CAPABILITY_IAM"
 
 # Runtime dependencies the handler needs that the Lambda runtime does not already
-# provide. ``boto3``/``botocore`` ship with the runtime, so only Jinja2 is bundled.
-RUNTIME_DEPENDENCIES = ("jinja2",)
+# provide. The python3.12 runtime ships ``boto3``/``botocore`` (excluded here), but
+# NOT jinja2, pydantic, or pydantic-settings — the handler imports all three
+# (rendering, request validation, settings). ``uv pip install`` resolves their
+# transitive deps (pydantic-core, python-dotenv, …) into the bundle automatically.
+RUNTIME_DEPENDENCIES = ("jinja2", "pydantic", "pydantic-settings")
+
+# Dependencies are packaged for the Lambda's runtime — python3.12 on the default
+# x86_64 architecture — not the operator's machine, so compiled wheels (e.g.
+# markupsafe's C speedups) are the correct ones for AWS Lambda.
+LAMBDA_PYTHON_VERSION = "3.12"
+LAMBDA_PYTHON_PLATFORM = "x86_64-unknown-linux-gnu"
 
 # Every external call is bounded so a hung CLI cannot block an operator forever.
 SUBPROCESS_TIMEOUT_SECONDS = 600
@@ -196,16 +205,22 @@ def package_lambda(
         ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
     )
 
+    # ``uv pip install`` is used rather than ``python -m pip``: the project runs in
+    # a uv-managed virtualenv that does not ship ``pip``, and uv lets us resolve
+    # wheels for the Lambda's platform/version regardless of the operator's OS.
     _run(
         runner,
         [
-            sys.executable,
-            "-m",
+            "uv",
             "pip",
             "install",
             *RUNTIME_DEPENDENCIES,
             "--target",
             str(build_dir),
+            "--python-platform",
+            LAMBDA_PYTHON_PLATFORM,
+            "--python-version",
+            LAMBDA_PYTHON_VERSION,
         ],
         failure="packaging the Lambda dependencies failed",
     )

@@ -116,8 +116,18 @@ def test_package_lambda_bundles_handler_templates_and_installs_deps(tmp_path: Pa
     assert any(name.endswith("notifications/handler.py") for name in names)
     assert any("templates/acme/welcome.html" in name for name in names)
 
-    # Runtime dependencies are installed into the bundle via a subprocess.
-    assert any("pip" in part for command in runner.calls for part in command)
+    # Runtime dependencies are installed into the bundle via ``uv pip install``
+    # (the uv venv has no ``pip``), targeting the Lambda's platform and version so
+    # the bundled wheels match the runtime rather than the operator's machine.
+    install = runner.command_starting_with("uv", "pip", "install")
+    # The runtime ships boto3/botocore but NOT these — the handler imports jinja2
+    # (render), pydantic (validation) and pydantic-settings (config), so all three
+    # must be bundled or the Lambda fails at import with ModuleNotFoundError.
+    for dependency in ("jinja2", "pydantic", "pydantic-settings"):
+        assert dependency in install
+    assert "--target" in install
+    assert "x86_64-unknown-linux-gnu" in install
+    assert "3.12" in install
 
 
 def test_package_lambda_raises_when_dependency_install_fails(tmp_path: Path) -> None:
