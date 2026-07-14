@@ -15,12 +15,13 @@
 | Default sender        | `hola@subastae.com`                            |
 | Environment           | `prod` (region `eu-central-1`)                 |
 | SES configuration set | `subastae-prod` (derived, never written twice) |
-| Templates             | `welcome`, `weekly_report`                     |
+| Templates             | `welcome`, `weekly_report`, `verify_email`, `password_reset`, `google_login_hint`, `registration_attempt`, `alert_digest`, `announcement` |
 
 ## Current state (done)
 
 - ✅ Registered in `notifications/src/notifications/tenants.py` (alongside the demo `acme` tenant).
-- ✅ Templates added: `notifications/src/notifications/templates/subastae/{welcome,weekly_report}.html` (Spanish).
+- ✅ Templates added under `notifications/src/notifications/templates/subastae/` (Spanish) — one per
+  email the app sends today; see the producer table below for the mapping.
 - ✅ Committed on `main`; full verification gate green.
 - ✅ Engine infrastructure already deployed and healthy (queue, DLQ, Lambda — packaging + timeout fixes live).
 
@@ -45,23 +46,33 @@ Add the SES DKIM records **only after** Cloudflare is authoritative.
 ## Resume checklist (run once DNS is on Cloudflare)
 
 All commands run from `notifications/`. Ensure an SSO session first: `aws sso login --profile default`.
+Every command below passes `--env prod` explicitly: `Settings.environment` is required (no
+`notifications/.env` on a fresh checkout → hard error), and an `ENVIRONMENT` pointing elsewhere
+would silently target the wrong stack.
 
 ### 1. Verify the domain in SES
 
 ```sh
-uv run tenant-setup subastae --profile default
+uv run tenant-setup subastae --env prod --profile default
 ```
 
-It fetches real DKIM tokens, prints DNS records, and polls until SES sees them verified. Have
-Cloudflare open to add records while it polls.
+The tool does **one** status read per run (it is idempotent — rerunning is the intended flow),
+so this is a two-pass step:
+
+1. **First run** creates the identity, fetches the real DKIM tokens, prints the DNS records,
+   and reports `dkim_status: pending` — expected, since the CNAMEs don't exist yet.
+2. Add the printed records in Cloudflare (see below).
+3. **Rerun** the same command to confirm verification once DNS has propagated; optionally add
+   `--poll-attempts 10` to keep polling within a single run.
 
 **In Cloudflare, from what it prints:**
 
 - ✅ Add the **3 DKIM `CNAME`** records (`<token>._domainkey.subastae.com → <token>.dkim.amazonses.com`). Unique
   selectors — safe, additive, no clash with Google's `google._domainkey`.
 - ❌ **Do NOT add the suggested SPF `TXT`.** You already have a Google SPF, and only one SPF record is allowed; a second
-  breaks email auth. DKIM alignment alone satisfies DMARC for SES. Only ever *merge* `include:amazonses.com` into the
-  existing SPF if you later adopt a custom MAIL FROM.
+  breaks email auth. DKIM alignment alone satisfies DMARC for SES. If you later adopt a custom MAIL FROM, do **not**
+  touch the root SPF: the CLI's MAIL FROM domain is `mail.subastae.com`, SES evaluates SPF against that envelope
+  subdomain, so publish the printed **MX and SPF `TXT` records at `mail.subastae.com`** instead.
 - ❌ **Don't duplicate DMARC** — keep the existing record.
 - ✋ **Leave MX alone** — SES sending doesn't change receiving.
 
@@ -75,15 +86,18 @@ uv run deploy --env prod --profile default --artifact-bucket global-notification
 
 ### 3. Smoke-test
 
-`welcome` requires a `name` (strict templating), so pass `--data` or it errors before SES:
+`welcome` requires a `name` (strict templating), so pass `--data` or it errors before SES.
+Use `--wait` — without it the CLI exits as soon as SQS accepts the message, before the Lambda
+has even run. With it, the CLI injects a correlation id, polls CloudWatch Logs for *this*
+message's delivery record, and exits nonzero on rejection or timeout:
 
 ```sh
-uv run smoke-test subastae welcome --profile default --data '{"name":"Prueba"}'
-aws logs tail /aws/lambda/notification-engine-delivery-prod --region eu-central-1 --profile default --since 5m --format short
+uv run smoke-test subastae welcome --env prod --profile default --data '{"name":"Prueba"}' --wait
 ```
 
-**Success:** a structured log line with `outcome:"delivered"` and a real SES message id (the
-mailbox simulator accepts it).
+**Success:** exit code 0 and the correlated log line with `outcome:"delivered"` and a real SES
+message id (the mailbox simulator accepts it). For ad-hoc debugging only:
+`aws logs tail /aws/lambda/notification-engine-delivery-prod --region eu-central-1 --profile default --since 5m --format short`.
 
 ## Notes
 
@@ -99,13 +113,41 @@ mailbox simulator accepts it).
   {"tenant": "subastae", "template_name": "welcome", "to": "user@example.com", "subject": "…", "template_data": {"name": "…"}}
   ```
 
+## App migration — producers to move off Gmail SMTP
+
+The goal of this onboarding: `hola@subastae.com` mail currently goes out via `smtplib` +
+Google SMTP directly from the app (`SMTP_HOST/PORT/USER/PASS/FROM` env vars in
+`auctions_scraper`). Once the domain is verified and SES production access is granted, these
+call sites migrate to enqueueing the JSON payload above instead of speaking SMTP:
+
+| Producer (in `auctions_scraper/src/`)          | Sends                                        | Engine template(s)                                                        |
+|------------------------------------------------|----------------------------------------------|---------------------------------------------------------------------------|
+| `routers/auth_router.py`                       | email verification                           | `verify_email` (`verify_url`)                                              |
+| `routers/auth_router.py`                       | password reset                               | `password_reset` (`reset_url`, `expiry_minutes`)                           |
+| `routers/auth_router.py`                       | "your account uses Google" hint              | `google_login_hint` (`login_url`)                                          |
+| `routers/auth_router.py`                       | registration-attempt notice                  | `registration_attempt` (`login_url`)                                       |
+| `auctions/management/weekly_email_delivery.py` | weekly Excel report (download link)          | `weekly_report` (`hero_title`, `hero_copy`, `download_url`, `available_until_date`, `account_url`) |
+| `auctions/management/dispatch_alerts.py`       | alert digest (new lot, price drop, ending soon, favorites) | `alert_digest` (`hero_title`, `hero_subtitle`, `sections[]`, `unsubscribe_url`) |
+| `auctions/management/announcements.py`         | one-off announcements                        | `announcement` (`title`, `paragraphs[]`, `cta_label`, `cta_url`)            |
+
+All templates exist under `templates/subastae/` with strict, tested variable contracts —
+`tests/unit/test_rendering.py` documents the exact `template_data` each producer must enqueue.
+Rendering is `StrictUndefined`: every listed variable is required (pass `""`/`0` to disable an
+optional block — the announcement CTA, a card's discount, or the digest's unsubscribe link for
+favorites-only digests, which carry no alert-unsubscribe URL). Subjects stay producer-side —
+they travel as the payload's `subject` field, not in the template. `weekly_report` renders the
+real Excel-download email (not the earlier metrics placeholder). The SES path also removes the
+SMTP throttle/retry workarounds those modules carry (burst-load disconnects on ~1/sec sends,
+the 2026-07-06 `SMTPServerDisconnected` incident).
+
 ## Onboarding checklist
 
 - [x] Tenant registered in `tenants.py`
 - [x] Templates added under `templates/subastae/`
 - [x] Gate green / committed
 - [ ] DNS migrated Route53 → Cloudflare (Google email records carried over)
-- [ ] `tenant-setup subastae` → 3 DKIM CNAMEs added in Cloudflare → verified
+- [ ] `tenant-setup subastae --env prod` (run 1) → 3 DKIM CNAMEs added in Cloudflare → rerun → verified
 - [ ] SES production access (out of sandbox) for real recipients
-- [ ] `uv run deploy` (creates `subastae-prod`)
-- [ ] `smoke-test subastae welcome --data '{"name":"…"}'` → `delivered`
+- [ ] `uv run deploy --env prod` (creates `subastae-prod`)
+- [ ] `smoke-test subastae welcome --env prod --data '{"name":"…"}' --wait` → exit 0, `delivered`
+- [ ] App producers migrated off Gmail SMTP (see "App migration" above)

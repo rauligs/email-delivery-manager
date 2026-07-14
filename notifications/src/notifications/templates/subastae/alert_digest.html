@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="es">
+  <body>
+    <h1>{{ hero_title }}</h1>
+    <p>{{ hero_subtitle }}</p>
+    {% for section in sections %}
+    <h2>{{ section.title }}</h2>
+    {% for card in section.cards %}
+    <table>
+      <tbody>
+        <tr>
+          <td><strong>{{ card.tag_label }}</strong></td>
+        </tr>
+        <tr>
+          <td>{{ card.description }}</td>
+        </tr>
+        <tr>
+          <td>
+            Valor subasta: {{ card.price }}{% if card.discount_pct %} (-{{ card.discount_pct
+            }}%){% endif %}
+          </td>
+        </tr>
+        <tr>
+          <td>{{ card.location }} · {{ card.asset_type }} · {{ card.origin }}</td>
+        </tr>
+        <tr>
+          <td><a href="{{ card.url }}">Ver detalle</a></td>
+        </tr>
+      </tbody>
+    </table>
+    {% endfor %}
+    {% endfor %}
+    {% if unsubscribe_url %}
+    <p><a href="{{ unsubscribe_url }}">Cancelar estas alertas</a></p>
+    {% endif %}
+  </body>
+</html>
