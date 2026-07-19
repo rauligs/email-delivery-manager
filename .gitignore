@@ -19,3 +19,6 @@ test-results/
 uv-*.lock
 # Local env (non-secret operator config only; never commit secrets)
 .env
+
+# ai-workflow installer backups (setup-ai-workflow.sh)
+*.bak.2*

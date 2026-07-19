@@ -1,0 +1,251 @@
+name: ralph-remote
+# AI-WORKFLOW-TEMPLATE-VERSION: 4
+
+# Remote mode: a push to a ralph/<slug> branch carrying an approved plan
+# (prd/PRD.md) runs the full Ralph pipeline and opens a PR for review.
+# Requires repo/org secrets:
+#   RALPH_CLAUDE_CODE_OAUTH_TOKEN - preferred Claude auth: subscription OAuth token
+#                             from `claude setup-token` (Claude Pro/Max). Exposed to
+#                             the agent step as CLAUDE_CODE_OAUTH_TOKEN.
+#   RALPH_ANTHROPIC_API_KEY - alternative Claude auth: metered API key (needs a
+#                             funded console.anthropic.com balance). Used only when
+#                             the OAuth token secret is absent.
+#   RALPH_CODEX_AUTH_JSON   - only if an agent is codex: the contents of
+#                             ~/.codex/auth.json after `codex login` (on a headless
+#                             machine: `codex login --device-auth`). Set it with:
+#                             gh secret set RALPH_CODEX_AUTH_JSON < ~/.codex/auth.json
+#   RALPH_OPENAI_API_KEY    - legacy OpenAI API-key auth for codex; still honored
+#                             when RALPH_CODEX_AUTH_JSON is absent.
+#   RALPH_GH_TOKEN          - a PAT or GitHub App token with contents/issues/PR write
+#                             plus actions read (the idempotency gate lists runs), so
+#                             the auto-opened PR triggers your PR checks (verify.yml).
+on:
+  push:
+    branches:
+      - 'ralph/**'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Bypass the idempotency gate (manual recovery)'
+        type: boolean
+        default: false
+
+concurrency:
+  group: ralph-${{ github.ref }}
+  cancel-in-progress: false
+
+# actions:read lets the idempotency gate list this workflow's runs with the
+# default github.token (on private repos the API returns 403 without it).
+permissions:
+  actions: read
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  ralph:
+    # Skip events for Ralph's own pushes: the final push carries [ralph skip];
+    # mid-run persistence pushes (one per closed issue) are committed by
+    # ralph-bot. Cancelling a run therefore actually STOPS it — queued events
+    # from its own pushes skip instead of resuming the loop; a retry stays an
+    # explicit human push or workflow_dispatch.
+    if: ${{ github.event.head_commit == null || (!contains(github.event.head_commit.message, '[ralph skip]') && github.event.head_commit.committer.name != 'ralph-bot') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+
+    # >>> RALPH-CI-JOB-SETUP-BEGIN >>> job-level CI config (services:, env:, ...); edit freely, preserved on template upgrades
+    # Job-level keys scripts/verify.sh needs (they cannot live between steps):
+    # services:, env:, container:, ... Step-level installs go in the
+    # RALPH-CI-SETUP region below instead. Example:
+    #   services:
+    #     postgres:
+    #       image: postgres:16
+    #       ports: ['5432:5432']
+    # <<< RALPH-CI-JOB-SETUP-END <<<
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Idempotency gate: skips a push while ANOTHER run for this branch is
+      # actually in progress or queued (so Ralph's own mid-run pushes don't spawn
+      # duplicates), and skips STALE events — pushes whose commit is no longer
+      # the branch tip because a later push (e.g. the run's final marked push)
+      # superseded them while this event sat queued behind the concurrency
+      # group. A finished run — success, failure, or cancelled — never blocks
+      # the branch; open tracking issues are ignored on purpose.
+      # Recovery after a failed run: push a new commit, or Actions -> ralph-remote
+      # -> "Run workflow" on the branch (set force=true to bypass this gate
+      # entirely, e.g. while a stuck run is still winding down).
+      # A commit whose message contains [ralph force] also bypasses the gate.
+      - name: Idempotency gate (skip stale events and concurrent runs)
+        id: gate
+        env:
+          GH_TOKEN: ${{ secrets.RALPH_GH_TOKEN || github.token }}
+          FORCE: ${{ inputs.force == true }}
+          HEAD_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          if [ "$FORCE" = "true" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "Force requested (workflow_dispatch); bypassing the gate."
+            exit 0
+          fi
+          case "$HEAD_MSG" in *"[ralph force]"*)
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "Force requested ([ralph force] in the commit message); bypassing the gate."
+            exit 0 ;;
+          esac
+          tip=$( (git ls-remote --quiet origin "refs/heads/$GITHUB_REF_NAME" 2>/dev/null || true) | cut -f1)
+          if [ -n "$tip" ] && [ "$tip" != "$GITHUB_SHA" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Stale event: '$GITHUB_REF_NAME' has moved on to $tip (this push was $GITHUB_SHA); skipping."
+            exit 0
+          fi
+          if ! active=$(gh run list --workflow "$GITHUB_WORKFLOW" --branch "$GITHUB_REF_NAME" --limit 100 \
+            --json databaseId,status \
+            --jq "[.[] | select(.databaseId != $GITHUB_RUN_ID) | select(.status != \"completed\")] | length"); then
+            echo "::warning::Could not list workflow runs (does the token have actions:read?); assuming none are active."
+            active=0
+          fi
+          if [ "${active:-0}" != "0" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Another run for '$GITHUB_REF_NAME' is in progress or queued; skipping this push."
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Node.js
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Claude Code CLI
+        if: steps.gate.outputs.run == 'true'
+        env:
+          CLAUDE_CODE_VERSION: '2.1.195'
+        run: npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+
+      # Installed only when .ralph.env selects codex, so other setups stay lean.
+      # PANEL_AGENT counts whenever the panel or the scope gate (default on) can
+      # run — both stages invoke it even when dev/QA are not codex.
+      - name: Install Codex CLI (only when an agent uses codex)
+        if: steps.gate.outputs.run == 'true'
+        env:
+          CODEX_VERSION: '0.142.5'
+        run: |
+          dev=$(. ./.ralph.env 2>/dev/null; echo "${DEVELOPER_AGENT:-claude}")
+          qa=$(. ./.ralph.env 2>/dev/null; echo "${QA_AGENT:-gemini}")
+          panel=$(. ./.ralph.env 2>/dev/null;
+            if [ "${PANEL_ENABLED:-0}" = "1" ] || [ "${PLAN_SCOPE_GATE:-1}" = "1" ]; then
+              echo "${PANEL_AGENT:-${QA_AGENT:-gemini}}"
+            fi)
+          if [ "$dev" = "codex" ] || [ "$qa" = "codex" ] || [ "$panel" = "codex" ]; then
+            npm install -g "@openai/codex@${CODEX_VERSION}"
+          else
+            echo "No codex agent configured; skipping."
+          fi
+
+      # >>> RALPH-CI-SETUP-BEGIN >>> your CI setup steps; edit freely, preserved on template upgrades
+      # --- Remote CI setup: install everything scripts/verify.sh needs --------------
+      # The runner is a clean ubuntu-latest with only Node + the Claude CLI (above).
+      # scripts/verify.sh MUST pass here using ONLY what you install in this block, so
+      # add your project's runtimes, tools, and services below. Gate EACH step with
+      #   if: steps.gate.outputs.run == 'true'
+      # Docker / Docker Compose are preinstalled on ubuntu-latest. AI-WORKFLOW.md
+      # ("Remote verify contract") has a ready-to-paste prompt that writes these steps
+      # for your stack. Example:
+      #   - name: Set up Python
+      #     if: steps.gate.outputs.run == 'true'
+      #     uses: actions/setup-python@v5
+      #     with: { python-version: '3.12' }
+      # <<< RALPH-CI-SETUP-END <<<
+
+      - name: Run Ralph (decompose -> dev/QA loop -> PR)
+        if: steps.gate.outputs.run == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.RALPH_GH_TOKEN || github.token }}
+          # ralph-remote.sh's credential preflight unsets whichever of these arrive
+          # empty and prefers the subscription token over the metered API key.
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.RALPH_CLAUDE_CODE_OAUTH_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.RALPH_ANTHROPIC_API_KEY }}
+          RALPH_CODEX_AUTH_JSON: ${{ secrets.RALPH_CODEX_AUTH_JSON }}
+          OPENAI_API_KEY: ${{ secrets.RALPH_OPENAI_API_KEY }}
+          CLAUDECODE_SANDBOX: '1'
+        run: |
+          chmod +x ralph.sh ralph-remote.sh ralph-handoff.sh 2>/dev/null || true
+          # Trusted copy for the cancellation safety net below: the in-flight
+          # issue may modify, delete, or break the worktree's ralph-remote.sh.
+          cp ralph-remote.sh "$RUNNER_TEMP/ralph-remote-trusted.sh"
+          ./ralph-remote.sh
+
+      # Cancellation or a job timeout kills ralph-remote.sh mid-loop, before
+      # its own failure path can preserve the in-flight attempt. This step runs
+      # in the cancellation grace period: it commits dirty work under the issue
+      # identity ralph.sh records and pushes anything unpushed (marked so the
+      # push cannot re-trigger a run), so a retry resumes instead of redoing
+      # the work. It runs the TRUSTED copy captured above — never the worktree
+      # copy the issue may have damaged — and is a visible failure (not || true)
+      # when preservation itself fails. A no-op when everything is pushed.
+      - name: Preserve work-in-progress (cancellation safety net)
+        if: ${{ always() && (failure() || cancelled()) && steps.gate.outputs.run == 'true' }}
+        run: |
+          if [ ! -f "$RUNNER_TEMP/ralph-remote-trusted.sh" ]; then
+            echo "No trusted copy captured (the run never started); nothing to preserve."
+            exit 0
+          fi
+          bash "$RUNNER_TEMP/ralph-remote-trusted.sh" --preserve-wip
+
+      # The run's observability files live under .git/ on the ephemeral runner
+      # and would otherwise vanish with it: preserve the run report, metrics,
+      # and the failed issue's QA findings as a downloadable artifact.
+      - name: Collect run state for the failure artifact
+        if: ${{ always() && (failure() || cancelled()) }}
+        run: |
+          mkdir -p /tmp/ralph-artifacts
+          for f in ralph-run-last.md ralph.run-metrics ralph.qa-exhausted; do
+            p=$(git rev-parse --git-path "$f" 2>/dev/null) || continue
+            if [ -f "$p" ]; then cp "$p" "/tmp/ralph-artifacts/$f"; fi
+          done
+          ls -l /tmp/ralph-artifacts/ || true
+
+      - name: Upload failure artifacts
+        if: ${{ always() && (failure() || cancelled()) }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ralph-run-${{ github.run_id }}
+          path: /tmp/ralph-artifacts/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      # Comment the logs link and close the tracking issue (reason: not
+      # planned). The next retry run reopens that same issue, so the whole
+      # story of a slug stays in one thread; issues closed as COMPLETED by a
+      # merged PR are never resurrected.
+      - name: Report workflow failure
+        if: ${{ always() && (failure() || cancelled()) }}
+        env:
+          GH_TOKEN: ${{ secrets.RALPH_GH_TOKEN || github.token }}
+        run: |
+          slug="${GITHUB_REF_NAME#ralph/}"
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          gh label create ralph:run --color FBCA04 --description "Ralph autonomous run" --force >/dev/null 2>&1 || true
+          issue_num=$(gh issue list --state open --label ralph:run --limit 200 \
+            --json number,title --jq ".[] | select(.title==\"Ralph run: $slug\") | .number" | head -n 1)
+          if [ -z "${issue_num:-}" ]; then
+            # Same filter as the retry logic in ralph-remote.sh: only reuse
+            # issues closed as NOT_PLANNED by a failed run. A COMPLETED issue
+            # from an earlier merged run keeps its thread — fall through and
+            # open a fresh issue instead.
+            issue_num=$(gh issue list --state closed --label ralph:run --limit 200 \
+              --json number,title,stateReason --jq ".[] | select(.title==\"Ralph run: $slug\") | select(.stateReason==\"NOT_PLANNED\") | .number" | head -n 1)
+          fi
+          if [ -z "${issue_num:-}" ]; then
+            issue_url=$(gh issue create --title "Ralph run: $slug" --label ralph:run \
+              --body "Autonomous Ralph run for branch \`$GITHUB_REF_NAME\` failed before the tracking issue was opened. Logs: $run_url")
+            issue_num="${issue_url##*/}"
+          fi
+          printf -v body 'Remote workflow stopped before completion. Logs and the run-report artifact: %s\n\nThe branch is not blocked: push a new commit or re-run via workflow_dispatch to retry (force=true bypasses the gate).' "$run_url"
+          gh issue comment "$issue_num" --body "$body"
+          gh issue close "$issue_num" --reason "not planned" >/dev/null 2>&1 || true

@@ -1,0 +1,50 @@
+name: verify
+# AI-WORKFLOW-TEMPLATE-VERSION: 4
+
+# Repo verification: runs scripts/verify.sh on pushes to main and on every PR.
+# This is the PR check the remote-mode auto-PR relies on (see ralph-remote.yml).
+# Uncomment / extend the steps below to install whatever scripts/verify.sh needs.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    # >>> RALPH-CI-JOB-SETUP-BEGIN >>> job-level CI config (services:, env:, ...); edit freely, preserved on template upgrades
+    # Job-level keys scripts/verify.sh needs (they cannot live between steps):
+    # services:, env:, container:, ... Step-level installs go in the
+    # RALPH-CI-SETUP region below instead. Example:
+    #   services:
+    #     postgres:
+    #       image: postgres:16
+    #       ports: ['5432:5432']
+    # <<< RALPH-CI-JOB-SETUP-END <<<
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # >>> RALPH-CI-SETUP-BEGIN >>> your CI setup steps; edit freely, preserved on template upgrades
+      # scripts/verify.sh needs: uv + Python 3.12 (shared, api, background,
+      # notifications), Node 20 (web, e2e), and Chromium system deps for the
+      # Playwright e2e run (verify.sh only runs `npx playwright install chromium`,
+      # which skips OS packages).
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - name: Install Playwright browser and system deps
+        working-directory: e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      # <<< RALPH-CI-SETUP-END <<<
+
+      - name: Run verification
+        run: ./scripts/verify.sh

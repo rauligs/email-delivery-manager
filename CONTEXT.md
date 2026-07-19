@@ -66,3 +66,36 @@ _Avoid_: encoding env into a Tenant id (e.g. `acme-prod`)
   for one concept — resolved to **Tenant**; wire field renamed `app_id` → `tenant`.
 - Tenant folders embedded the environment (`tenant-a-prod`) — resolved: **Environment**
   is a deployment dimension, never part of the Tenant id.
+
+## Project layout & skill routing
+
+Folder map for this repo; skills are declared by name. Claude agents resolve
+them at `.claude/skills/<name>/SKILL.md`, Codex agents at
+`.agents/skills/<name>/SKILL.md`.
+
+| Folder | What lives there | Skill |
+|--------|------------------|-------|
+| `api/` | FastAPI service — HTTP contracts, Pydantic v2, auth, API tests | `api` |
+| `background/` | Python workers — scraping, durable jobs, checkpoints | `python` |
+| `notifications/` | Serverless notification engine (the domain described above): render, send via SES, deploy | `python` |
+| `shared/` | Python library shared by api, background, and notifications | `python` |
+| `web/` | Next.js + React + TypeScript + Tailwind frontend | `frontend` |
+| `e2e/` | Playwright end-to-end tests across web and api | `frontend` |
+
+- Cross-folder work: load every relevant skill; the stricter production rule wins.
+- Folders with no declared skill (`scripts/`, `docs/`): inspect local patterns
+  and apply the closest standard above.
+
+## How to run and verify
+
+- Verification contract: `./scripts/verify.sh` — the only accepted pre-commit
+  check. Per Python project (`shared`, `api`, `background`, `notifications`) it
+  runs `uv sync`, `pytest`, `ruff check`, and `ruff format --check`; then in
+  `web`: typecheck, lint, vitest, build; then in `e2e`: Playwright, which
+  auto-starts the web dev server and the API (uvicorn) itself.
+- Toolchain: Python 3.12 managed with `uv`; `web/` and `e2e/` are npm projects
+  (Node 20).
+- Local stacks: `docker-compose.db.yml` (Postgres), `docker-compose.web-api.yml`,
+  `docker-compose.background.yml`.
+- Operational docs: `DEPLOYMENT.md` (deploy), `TENANT-ONBOARDING.md` (adding a
+  Tenant), `README.md`.
