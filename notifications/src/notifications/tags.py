@@ -12,3 +12,12 @@ def standard_tags(environment: str) -> dict[str, str]:
         "environment": environment,
         "managed-by": "email-delivery-manager",
     }
+
+
+def tenant_tags(environment: str, tenant_slug: str) -> dict[str, str]:
+    """Return the standard tags plus the owning tenant.
+
+    Applied to per-tenant resources (SES identity, configuration set) so one
+    tenant's footprint is filterable in a shared AWS account.
+    """
+    return standard_tags(environment) | {"tenant": tenant_slug}

@@ -9,12 +9,12 @@ import json
 from typing import Any
 
 from notifications.infra.stack import build_template
-from notifications.tags import standard_tags
+from notifications.tags import standard_tags, tenant_tags
 from notifications.tenants import TENANTS
 
 # Some resource types do not accept tags in CloudFormation, so they are excluded
 # from the every-resource-is-tagged invariant below.
-_TAGLESS_TYPES = {"AWS::SES::ConfigurationSet", "AWS::Lambda::EventSourceMapping"}
+_TAGLESS_TYPES = {"AWS::Lambda::EventSourceMapping"}
 
 
 def _resources_of_type(resources: dict[str, Any], type_: str) -> list[dict[str, Any]]:
@@ -51,7 +51,17 @@ def test_every_taggable_resource_carries_the_standard_tag_set() -> None:
     for name, resource in resources.items():
         if resource["Type"] in _TAGLESS_TYPES:
             continue
-        assert _tags_as_dict(resource) == expected, f"{name} is missing standard tags"
+        tags = _tags_as_dict(resource)
+        assert expected.items() <= tags.items(), f"{name} is missing standard tags"
+
+
+def test_configuration_sets_carry_their_tenant_tag() -> None:
+    resources = _synthesize("staging")["Resources"]
+    config_sets = _resources_of_type(resources, "AWS::SES::ConfigurationSet")
+
+    for resource in config_sets:
+        slug = resource["Properties"]["Name"].removesuffix("-staging")
+        assert _tags_as_dict(resource) == tenant_tags("staging", slug)
 
 
 def test_stack_creates_one_configuration_set_per_tenant_with_the_derived_name() -> None:

@@ -1,4 +1,4 @@
-from notifications.tags import standard_tags
+from notifications.tags import standard_tags, tenant_tags
 
 
 def test_standard_tags_returns_the_required_tag_set() -> None:
@@ -18,3 +18,17 @@ def test_standard_tags_returns_a_fresh_mapping_each_call() -> None:
     first["app"] = "mutated"
 
     assert standard_tags("test")["app"] == "notification-engine"
+
+
+def test_tenant_tags_extends_the_standard_set_with_the_tenant() -> None:
+    assert tenant_tags("staging", "subastae") == {
+        **standard_tags("staging"),
+        "tenant": "subastae",
+    }
+
+
+def test_tenant_tags_threads_environment_and_slug_through() -> None:
+    tags = tenant_tags("prod", "acme")
+
+    assert tags["environment"] == "prod"
+    assert tags["tenant"] == "acme"

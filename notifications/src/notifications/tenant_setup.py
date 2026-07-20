@@ -28,7 +28,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 from pydantic import ValidationError
 
 from notifications.config import Settings
-from notifications.tags import standard_tags
+from notifications.tags import tenant_tags
 from notifications.tenants import Tenant, UnknownTenant, resolve_tenant
 
 # Easy DKIM publishes three CNAMEs of the form ``<token>._domainkey.<domain>`` that
@@ -299,7 +299,7 @@ def setup_domain(
     client: Any,
     domain: str,
     *,
-    environment: str,
+    tags: dict[str, str],
     region: str,
     attempts: int,
     interval: float,
@@ -307,7 +307,7 @@ def setup_domain(
     out: TextIO,
 ) -> DomainSetup:
     """Provision one domain identity and return its records and verification state."""
-    identity, created = ensure_identity(client, domain, standard_tags(environment))
+    identity, created = ensure_identity(client, domain, tags)
     status, verified, tokens = poll_dkim_status(
         client, domain, identity, attempts=attempts, interval=interval, sleeper=sleeper, out=out
     )
@@ -376,7 +376,7 @@ def run_setup(
         setup = setup_domain(
             client,
             domain,
-            environment=config.environment,
+            tags=tenant_tags(config.environment, tenant.slug),
             region=config.region,
             attempts=attempts,
             interval=interval,

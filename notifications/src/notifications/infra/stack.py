@@ -22,7 +22,7 @@ from troposphere.iam import Policy, Role
 from troposphere.ses import ConfigurationSet
 from troposphere.sqs import Queue, RedrivePolicy
 
-from notifications.tags import standard_tags
+from notifications.tags import standard_tags, tenant_tags
 from notifications.tenants import TENANTS, Tenant, configuration_set_name
 
 LAMBDA_RUNTIME = "python3.12"
@@ -219,14 +219,15 @@ def build_template(
 
     # One SES configuration set per tenant, named with the same derived
     # ``<slug>-<environment>`` the handler binds each send to. Looping the shared
-    # registry keeps the provisioned sets and the running code in lockstep.
-    # ``AWS::SES::ConfigurationSet`` does not accept tags, so these resources are
-    # intentionally untagged.
+    # registry keeps the provisioned sets and the running code in lockstep. Each
+    # set carries a ``tenant`` tag on top of the standard set so per-tenant
+    # resources stay filterable in the shared account.
     for tenant in TENANTS.values():
         template.add_resource(
             ConfigurationSet(
                 _configuration_set_logical_id(tenant),
                 Name=configuration_set_name(tenant, environment),
+                Tags=Tags(tenant_tags(environment, tenant.slug)),
             )
         )
 

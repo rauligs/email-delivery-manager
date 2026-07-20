@@ -13,7 +13,7 @@ import pytest
 from botocore.stub import Stubber
 
 from notifications import tenant_setup as ts
-from notifications.tags import standard_tags
+from notifications.tags import standard_tags, tenant_tags
 from notifications.tenants import resolve_tenant
 
 
@@ -245,6 +245,40 @@ def test_run_setup_emits_records_and_reports_sandbox(sesv2: tuple[object, Stubbe
     assert "v=DMARC1" in text  # DMARC guidance emitted
     assert "sandbox" in text.lower()  # sandbox status reported
     assert "cost" in text.lower()  # cost is flagged
+    stubber.assert_no_pending_responses()
+
+
+def test_run_setup_creates_missing_identities_with_tenant_tags(
+    sesv2: tuple[object, Stubber],
+) -> None:
+    client, stubber = sesv2
+    tenant = resolve_tenant("acme")
+    stubber.add_client_error("get_email_identity", service_error_code="NotFoundException")
+    expected_tags = [{"Key": k, "Value": v} for k, v in tenant_tags("staging", "acme").items()]
+    stubber.add_response(
+        "create_email_identity",
+        {
+            "IdentityType": "DOMAIN",
+            "VerifiedForSendingStatus": False,
+            "DkimAttributes": {"Status": "PENDING", "Tokens": ["t1", "t2", "t3"]},
+        },
+        {"EmailIdentity": "acme.example", "Tags": expected_tags},
+    )
+    stubber.add_response("get_account", {"ProductionAccessEnabled": False})
+    config = ts.SetupConfig(environment="staging", region="eu-central-1", profile=None)
+
+    with stubber:
+        result = ts.run_setup(
+            config,
+            tenant,
+            client=client,
+            attempts=1,
+            interval=0,
+            sleeper=lambda _s: None,
+            out=io.StringIO(),
+        )
+
+    assert result.domains[0].created is True
     stubber.assert_no_pending_responses()
 
 
