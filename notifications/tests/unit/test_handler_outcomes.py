@@ -4,9 +4,17 @@ non-retriable outcome without ever touching the sender.
 """
 
 import json
+import logging
 from typing import Any
 
 from notifications.handler import Delivered, Rejected, process_event, process_record
+
+
+def test_delivery_logger_level_is_pinned_to_info() -> None:
+    """The Lambda runtime leaves the root logger at WARNING; without an explicit
+    pin the INFO-level delivery records — the engine's only observability — are
+    silently dropped."""
+    assert logging.getLogger("notifications.delivery").getEffectiveLevel() == logging.INFO
 
 
 class RecordingSender:

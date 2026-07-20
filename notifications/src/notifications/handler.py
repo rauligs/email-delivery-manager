@@ -30,6 +30,9 @@ from .tenants import (
 )
 
 logger = logging.getLogger("notifications.delivery")
+# The Lambda python3.12 runtime leaves the root logger at WARNING, which silently
+# drops the INFO-level delivery records smoke tests and operators depend on.
+logger.setLevel(logging.INFO)
 
 
 @dataclass(frozen=True)

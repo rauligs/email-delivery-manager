@@ -55,6 +55,24 @@ def test_every_taggable_resource_carries_the_standard_tag_set() -> None:
         assert expected.items() <= tags.items(), f"{name} is missing standard tags"
 
 
+def test_send_email_policy_covers_identities_and_configuration_sets() -> None:
+    """``ses:SendEmail`` with a configuration set authorizes against both the
+    identity and the config set; a policy listing only config sets denies every
+    send."""
+    resources = _synthesize("staging")["Resources"]
+    role = _only(resources, "AWS::IAM::Role")
+    statements = role["Properties"]["Policies"][0]["PolicyDocument"]["Statement"]
+    send = next(s for s in statements if s["Sid"] == "SendThroughTenantConfigurationSets")
+    arns = {r["Fn::Sub"] for r in send["Resource"]}
+
+    for tenant in TENANTS.values():
+        assert any(f"configuration-set/{tenant.slug}-staging" in arn for arn in arns)
+        for domain in tenant.from_domains:
+            assert any(arn.endswith(f"identity/{domain}") for arn in arns), (
+                f"missing identity ARN for {domain}"
+            )
+
+
 def test_configuration_sets_carry_their_tenant_tag() -> None:
     resources = _synthesize("staging")["Resources"]
     config_sets = _resources_of_type(resources, "AWS::SES::ConfigurationSet")
@@ -161,15 +179,18 @@ def _statement(statements: list[dict[str, Any]], sid: str) -> dict[str, Any]:
     return next(s for s in statements if s["Sid"] == sid)
 
 
-def test_iam_scopes_send_email_to_the_tenant_configuration_sets() -> None:
+def test_iam_scopes_send_email_to_tenant_resources_only() -> None:
     statements = _delivery_policy_statements("staging")
     send = _statement(statements, "SendThroughTenantConfigurationSets")
 
     assert send["Action"] == "ses:SendEmail"
-    assert len(send["Resource"]) == len(TENANTS)
+    domain_count = sum(len(t.from_domains) for t in TENANTS.values())
+    assert len(send["Resource"]) == len(TENANTS) + domain_count
     for resource in send["Resource"]:
-        assert "configuration-set/" in resource["Fn::Sub"]
-        assert "-staging" in resource["Fn::Sub"]
+        arn = resource["Fn::Sub"]
+        assert "configuration-set/" in arn or "identity/" in arn
+        if "configuration-set/" in arn:
+            assert "-staging" in arn
 
 
 def test_iam_allows_draining_the_source_queue_and_parking_in_the_dlq() -> None:

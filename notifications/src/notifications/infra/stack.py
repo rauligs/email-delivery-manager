@@ -75,6 +75,20 @@ def _configuration_set_arns(environment: str) -> list[Sub]:
     ]
 
 
+def _identity_arns() -> list[Sub]:
+    """The SES identity ARNs the function may send as, one per tenant domain.
+
+    ``ses:SendEmail`` with a configuration set is authorized against *both* the
+    sending identity and the configuration set, so the policy must allow the
+    identity ARNs too — config-set ARNs alone deny every send.
+    """
+    return [
+        Sub(f"arn:${{AWS::Partition}}:ses:${{AWS::Region}}:${{AWS::AccountId}}:identity/{domain}")
+        for tenant in TENANTS.values()
+        for domain in tenant.from_domains
+    ]
+
+
 def build_template(
     environment: str,
     *,
@@ -143,7 +157,7 @@ def build_template(
                             "Sid": "SendThroughTenantConfigurationSets",
                             "Effect": "Allow",
                             "Action": "ses:SendEmail",
-                            "Resource": _configuration_set_arns(environment),
+                            "Resource": _configuration_set_arns(environment) + _identity_arns(),
                         },
                         {
                             "Sid": "DrainDeliveryQueue",
