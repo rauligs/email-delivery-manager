@@ -22,3 +22,6 @@ uv-*.lock
 
 # ai-workflow installer backups (setup-ai-workflow.sh)
 *.bak.2*
+
+# Lambda deploy build workspace (leaks only if the deploy CLI is killed mid-run)
+notification-engine-deploy-*/
