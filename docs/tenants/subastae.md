@@ -122,6 +122,9 @@ message id (the mailbox simulator accepts it). For ad-hoc debugging only:
 
 ## App migration — producers to move off Gmail SMTP
 
+> Per-template migration instructions (exact payloads, one section per producer, written
+> for the migrating agent): [subastae-template-migration.md](subastae-template-migration.md).
+
 The goal of this onboarding: `hola@subastae.com` mail currently goes out via `smtplib` +
 Google SMTP directly from the app (`SMTP_HOST/PORT/USER/PASS/FROM` env vars in
 `auctions_scraper`). Once the domain is verified and SES production access is granted, these
