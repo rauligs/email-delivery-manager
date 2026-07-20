@@ -1,7 +1,14 @@
 # Subastae — Tenant Onboarding Runbook
 
-> **Status: PARKED (2026-06-02).** Waiting on the `subastae.com` DNS migration from
-> **Route53 → Cloudflare**. Resume the steps below once Cloudflare is authoritative.
+> **Status: ENGINE LIVE (2026-07-20).** Domain verified in SES (DKIM), stack deployed,
+> smoke test `delivered`. Remaining: SES production access, then migrating the app
+> producers off Gmail SMTP. Notes from the resume run:
+>
+> - The Route53 → Cloudflare migration had dropped the root SPF and `_dmarc` records;
+>   both were re-added (Google SPF + `p=none` DMARC) on 2026-07-20.
+> - Two pre-existing engine bugs surfaced and were fixed during the run: the send
+>   policy lacked SES identity ARNs (every send got AccessDenied), and the delivery
+>   logger was filtered below INFO on python3.12 (no outcome records ever logged).
 >
 > Per-tenant companion to the general guides:
 > [TENANT-ONBOARDING.md](../../TENANT-ONBOARDING.md) and [DEPLOYMENT.md](../../DEPLOYMENT.md).
@@ -145,9 +152,9 @@ the 2026-07-06 `SMTPServerDisconnected` incident).
 - [x] Tenant registered in `tenants.py`
 - [x] Templates added under `templates/subastae/`
 - [x] Gate green / committed
-- [ ] DNS migrated Route53 → Cloudflare (Google email records carried over)
-- [ ] `tenant-setup subastae --env prod` (run 1) → 3 DKIM CNAMEs added in Cloudflare → rerun → verified
+- [x] DNS migrated Route53 → Cloudflare (Google email records carried over; missing SPF/DMARC re-added 2026-07-20)
+- [x] `tenant-setup subastae --env prod` (run 1) → 3 DKIM CNAMEs added in Cloudflare → rerun → verified (2026-07-20)
 - [ ] SES production access (out of sandbox) for real recipients
-- [ ] `uv run deploy --env prod` (creates `subastae-prod`)
-- [ ] `smoke-test subastae welcome --env prod --data '{"name":"…"}' --wait` → exit 0, `delivered`
+- [x] `uv run deploy --env prod` (creates `subastae-prod`) (2026-07-20)
+- [x] `smoke-test subastae welcome --env prod --data '{"name":"…"}' --wait` → exit 0, `delivered` (2026-07-20)
 - [ ] App producers migrated off Gmail SMTP (see "App migration" above)
